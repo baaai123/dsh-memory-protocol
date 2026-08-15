@@ -1,5 +1,9 @@
 # dsh-memory-protocol
 
+[![npm](https://img.shields.io/npm/v/dsh-memory-protocol)](https://www.npmjs.com/package/dsh-memory-protocol)
+[![GitHub](https://img.shields.io/badge/github-baaai123%2Fdsh--memory--protocol-blue)](https://github.com/baaai123/dsh-memory-protocol)
+[![PyPI](https://img.shields.io/pypi/v/memory-skill)](https://pypi.org/project/memory-skill/)
+
 [English](#dsh-memory-protocol) | [中文](#dsh-memory-protocol-1)
 
 **为 DeepSeek Harness 打造的长期记忆插件** — 桥接 [opencode-memory](https://github.com/baaai123/solo-memory) MCP 服务器，并附加强制记忆协议。
