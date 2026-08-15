@@ -1,0 +1,38 @@
+/**
+ * Memory protocol enforcement plugin.
+ *
+ * Mirrors the opencode-side `solo-memory` hard protocol on DeepSeek Harness:
+ *
+ * 1. Force `memory_weave` once per agent turn before any non-memory tool may run.
+ *    `tools/pre-execute` denies every tool call while the turn's weave is pending;
+ *    the memory tools themselves (`mcp__opencode_memory__*`) are whitelisted so the
+ *    weave can actually happen.
+ * 2. Auto-inject the weave context into the first step of each turn via
+ *    `agent/pre-step`, so the model sees the relevant memory without asking.
+ * 3. Auto-ingest the completed turn at `agent/turn-stopping` from the buffered
+ *    `session/event` stream, so every dialogue block is persisted without the
+ *    model having to call the tool itself.
+ *
+ * The memory MCP server is reached through the registered MCP-bridged tools
+ * (`ctx.tools.execute({ name: 'mcp__opencode_memory__memory_weave', ... })`), so this
+ * plugin has no direct dependency on the Python server; it only requires the
+ * `mcp__opencode_memory__` tools to be present (mounted via the mcp-client overlay).
+ *
+ * @module @deepseek-ai/dsh-memory-protocol
+ */
+import type { Context } from '@deepseek-ai/cordis';
+import Schema from '@deepseek-ai/schemastery';
+export declare const name = "memory-protocol";
+export declare const inject: string[];
+export interface Config {
+    /** Hard-deny tool calls while the turn's weave is pending. Default true. */
+    enforceWeave: boolean;
+    /** Auto-inject the weave context into the first step of each turn. Default true. */
+    injectWeave: boolean;
+    /** Auto-ingest each completed turn at turn-stopping. Default true. */
+    autoIngest: boolean;
+    /** Additional tool names exempt from the weave gate. Default []. */
+    allowlist: string[];
+}
+export declare const Config: Schema<Config>;
+export declare function apply(ctx: Context, config: Config): void;

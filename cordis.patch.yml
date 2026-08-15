@@ -1,0 +1,34 @@
+# dsh-memory-protocol — 记忆强制协议插件（bundle 层）
+#
+# 两个 entry：
+#   1. memory-mcp  — 通过官方 @deepseek-ai/dsh-mcp-client 桥接 opencode-memory
+#                    Python MCP server（需已 pip install memory-skill）
+#   2. memory-protocol — 强制协议：工具调用前强制 memory_weave、
+#                    自动注入记忆上下文、每轮自动 ingest
+#
+# Python MCP server 路径通过环境变量覆盖（默认 python3）：
+#   MEMORY_SKILL_PYTHON   — 解释器路径（默认 python3）
+#   MEMORY_SKILL_DIR      — 项目目录（默认 process.cwd()）
+#   MEMORY_SKILL_DB_PATH  — 记忆库路径（默认不设，server 用 memory.db）
+#   IMPORTANCE_API_KEY    — LLM 重要性评分 key（可选）
+
+- insert:
+    - id: memory-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: opencode_memory
+        transport: stdio
+        command: !!js process.env.MEMORY_SKILL_PYTHON ?? 'python3'
+        args: ['-m', 'memory_skill.mcp_server']
+        cwd: !!js process.env.MEMORY_SKILL_DIR ?? process.cwd()
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+    - id: memory-protocol
+      name: dsh-memory-protocol
+      config:
+        enforceWeave: true
+        injectWeave: true
+        autoIngest: true
+        allowlist: []
