@@ -66,3 +66,12 @@ dsh (Web / headless)
 ## License
 
 MIT
+
+
+## 截图
+
+| 架构 | 强制执行演示 | 配置项 |
+|---|---|---|
+| ![architecture](assets/screenshots/architecture@2x.png) | ![demo](assets/screenshots/enforcement-demo.png) | ![config](assets/screenshots/config.png) |
+
+> 演示为真实运行输出：未 weave 调工具 → ⛔ DENY；pre-step 自动 weave 并注入记忆上下文；turn-stopping 自动 ingest。
