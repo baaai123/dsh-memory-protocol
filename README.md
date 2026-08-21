@@ -70,6 +70,8 @@ MIT
 
 ## 截图
 
+![cover](assets/screenshots/cover.png)
+
 | 架构 | 强制执行演示 | 配置项 |
 |---|---|---|
 | ![architecture](assets/screenshots/architecture@2x.png) | ![demo](assets/screenshots/enforcement-demo.png) | ![config](assets/screenshots/config.png) |
