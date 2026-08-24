@@ -12,6 +12,12 @@
  * 3. Auto-ingest the completed turn at `agent/turn-stopping` from the buffered
  *    `session/event` stream, so every dialogue block is persisted without the
  *    model having to call the tool itself.
+ * 4. Fail-open when the memory MCP tools are missing (a marketplace install
+ *    that skipped the Python side): the gate passes instead of paralyzing the
+ *    agent, a one-time loud guidance is surfaced, and the bootstrap script
+ *    (scripts/bootstrap-memory.mjs) is spawned once to install the Python deps
+ *    + embedding model. Strict mode resumes automatically the moment the
+ *    tools register.
  *
  * The memory MCP server is reached through the registered MCP-bridged tools
  * (`ctx.tools.execute({ name: 'mcp__opencode_memory__memory_weave', ... })`), so this
@@ -33,6 +39,14 @@ export interface Config {
     autoIngest: boolean;
     /** Additional tool names exempt from the weave gate. Default []. */
     allowlist: string[];
+    /**
+     * Fail-open when the memory MCP tools are missing: the gate passes, no
+     * auto-weave/ingest is attempted, and a one-time loud guidance is surfaced.
+     * Strict behavior is unchanged whenever the tools ARE present. Default true.
+     */
+    bootFailOpen: boolean;
+    /** Auto-run scripts/bootstrap-memory.mjs (once per process) when the tools are missing. Default true. */
+    autoBootstrap: boolean;
 }
 export declare const Config: Schema<Config>;
 export declare function apply(ctx: Context, config: Config): void;

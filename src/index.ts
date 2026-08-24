@@ -12,6 +12,12 @@
  * 3. Auto-ingest the completed turn at `agent/turn-stopping` from the buffered
  *    `session/event` stream, so every dialogue block is persisted without the
  *    model having to call the tool itself.
+ * 4. Fail-open when the memory MCP tools are missing (a marketplace install
+ *    that skipped the Python side): the gate passes instead of paralyzing the
+ *    agent, a one-time loud guidance is surfaced, and the bootstrap script
+ *    (scripts/bootstrap-memory.mjs) is spawned once to install the Python deps
+ *    + embedding model. Strict mode resumes automatically the moment the
+ *    tools register.
  *
  * The memory MCP server is reached through the registered MCP-bridged tools
  * (`ctx.tools.execute({ name: 'mcp__opencode_memory__memory_weave', ... })`), so this
@@ -27,6 +33,8 @@ import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { CallId, createUserMessage, type MessageSource } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { PreToolDecision, ToolExecution, ToolExecutionInput } from '@deepseek-ai/dsh-tools'
+import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 /** MCP-bridged tool name prefix for the opencode memory server. */
 const MCP_PREFIX = 'mcp__opencode_memory__'
@@ -53,6 +61,19 @@ const MEMORY_TOOL_NAMES = new Set([
 /** Message source marking protocol-injected context as plugin-owned (log-rebuildable). */
 const PLUGIN_SOURCE: MessageSource = { kind: 'plugin', plugin: 'memory-protocol' }
 
+/** One-time guidance surfaced when the memory MCP tools are missing. */
+const MISSING_TOOLS_GUIDANCE =
+  'memory-protocol: memory MCP tools NOT registered (python3 -m memory_skill.mcp_server unavailable). ' +
+  'Fix: pip install "memory-skill[onnx]" + download bge-large-en-v1.5 (auto-bootstrap does this; ' +
+  'set MEMORY_SKIP_BOOTSTRAP=1 to disable), or set MEMORY_SKILL_PYTHON to the right interpreter. ' +
+  'Agent is running WITHOUT memory until the tools appear.'
+
+// Fail-open bootstrap state — module-level, so each surface fires once per process.
+let warnedMissing = false // logger.warn guidance emitted once while tools are missing
+let guidanceInjected = false // guidance user-message injected once
+let bootstrapSpawned = false // bootstrap script spawned at most once
+let resumedLogged = false // transition log once when tools come back
+
 /**
  * Per-agent protocol state: whether the CURRENT turn has already run its weave.
  * Reset to `false` at `agent/turn-stopping` so a fresh turn must weave again.
@@ -71,6 +92,44 @@ function isMemoryTool(name: string): boolean {
 /** The MCP-bridged public name for a raw memory tool name. */
 function memoryTool(raw: string): string {
   return `${MCP_PREFIX}${raw}`
+}
+
+/**
+ * Dynamic check: memory tools may register after apply (MCP connect, restart,
+ * reconnect), so this must be evaluated per hook invocation, never cached.
+ */
+function memoryToolsAvailable(ctx: Context): boolean {
+  return ctx.tools.get(memoryTool('memory_weave')) !== undefined
+}
+
+/** Emit the loud missing-tools guidance to the log, at most once per process. */
+function warnMissingOnce(ctx: Context): void {
+  if (warnedMissing) return
+  warnedMissing = true
+  ctx.logger.warn(MISSING_TOOLS_GUIDANCE)
+}
+
+/** Log the missing → present transition once (strict gate resumes). */
+function noteResumedOnce(ctx: Context): void {
+  if (!warnedMissing || resumedLogged) return
+  resumedLogged = true
+  ctx.logger.warn('memory-protocol: memory MCP tools registered — strict gate resumed')
+}
+
+/**
+ * Spawn the bootstrap script (pip install + model download) at most once per
+ * process, non-blocking. A spawn failure must never throw out of a hook.
+ */
+function maybeSpawnBootstrap(ctx: Context, config: Config): void {
+  if (bootstrapSpawned) return
+  bootstrapSpawned = true
+  try {
+    const script = fileURLToPath(new URL('../scripts/bootstrap-memory.mjs', import.meta.url))
+    spawn(process.execPath, [script], { detached: false, stdio: 'inherit', env: process.env })
+    ctx.logger.warn('memory-protocol: bootstrap started — pip install + model download; restart dsh after it completes to mount the MCP server')
+  } catch (error) {
+    ctx.logger.warn(`memory-protocol: bootstrap spawn failed: ${String(error)}`)
+  }
 }
 
 /** Invoke a memory MCP tool through the registered ToolRuntime. */
@@ -146,6 +205,14 @@ export interface Config {
   autoIngest: boolean
   /** Additional tool names exempt from the weave gate. Default []. */
   allowlist: string[]
+  /**
+   * Fail-open when the memory MCP tools are missing: the gate passes, no
+   * auto-weave/ingest is attempted, and a one-time loud guidance is surfaced.
+   * Strict behavior is unchanged whenever the tools ARE present. Default true.
+   */
+  bootFailOpen: boolean
+  /** Auto-run scripts/bootstrap-memory.mjs (once per process) when the tools are missing. Default true. */
+  autoBootstrap: boolean
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -153,6 +220,8 @@ export const Config: Schema<Config> = Schema.object({
   injectWeave: Schema.boolean().default(true),
   autoIngest: Schema.boolean().default(true),
   allowlist: Schema.array(Schema.string()).default([]),
+  bootFailOpen: Schema.boolean().default(true),
+  autoBootstrap: Schema.boolean().default(true),
 })
 
 export function apply(ctx: Context, config: Config): void {
@@ -173,6 +242,7 @@ export function apply(ctx: Context, config: Config): void {
   // tools/pre-execute: the protocol gate. Deny non-memory tools while the
   // current turn's weave is still pending.
   ctx.on('tools/pre-execute', async (exec: ToolExecution, next): Promise<PreToolDecision> => {
+    if (memoryToolsAvailable(ctx)) noteResumedOnce(ctx)
     if (exec.name === memoryTool('memory_weave')) {
       // An explicit model-driven weave also satisfies the gate for this turn.
       if (exec.agent) weavedThisTurn.set(exec.agent, true)
@@ -181,6 +251,12 @@ export function apply(ctx: Context, config: Config): void {
     if (isMemoryTool(exec.name) || allow.has(exec.name)) return next()
     const agent = exec.agent
     if (agent !== undefined && weavedThisTurn.get(agent)) return next()
+    // Fail-open: without the memory tools the gate can never be satisfied —
+    // let every non-memory tool through and surface the guidance once.
+    if (config.bootFailOpen && !memoryToolsAvailable(ctx)) {
+      warnMissingOnce(ctx)
+      return next()
+    }
     if (!config.enforceWeave) return next()
     return {
       kind: 'deny',
@@ -217,16 +293,31 @@ export function apply(ctx: Context, config: Config): void {
     if (downstream.kind !== 'enter') return downstream
     if (weavedThisTurn.get(agent)) return downstream
 
-    if (!config.injectWeave) {
-      // Without auto-weave the gate stays closed until the model weaves on its own.
+    if (!memoryToolsAvailable(ctx)) {
+      if (config.bootFailOpen) {
+        // Fail-open: skip the auto-weave branch entirely, spawn the bootstrap
+        // once, and inject a one-time guidance message. The gate is open, so
+        // weavedThisTurn is deliberately left unset.
+        if (config.autoBootstrap) maybeSpawnBootstrap(ctx, config)
+        if (!guidanceInjected) {
+          guidanceInjected = true
+          const injected = createUserMessage({
+            content: [{ type: 'text', text: MISSING_TOOLS_GUIDANCE }],
+            source: { ...PLUGIN_SOURCE, form: 'instructions' },
+          })
+          return { kind: 'enter', messages: [injected, ...downstream.messages] }
+        }
+        return downstream
+      }
+      if (config.injectWeave) {
+        // Fail-closed: the gate stays closed until the tools appear.
+        ctx.logger.warn('memory-protocol: memory_weave tool not registered yet; protocol gate stays closed')
+      }
       return downstream
     }
 
-    // Fail-closed ordering: the weave marker is set only after the memory tool is
-    // actually registered AND the weave call succeeds. Otherwise the gate remains
-    // closed, so a later non-memory tool call is denied until a weave happens.
-    if (ctx.tools.get(memoryTool('memory_weave')) === undefined) {
-      ctx.logger.warn('memory-protocol: memory_weave tool not registered yet; protocol gate stays closed')
+    if (!config.injectWeave) {
+      // Without auto-weave the gate stays closed until the model weaves on its own.
       return downstream
     }
 
@@ -266,6 +357,11 @@ export function apply(ctx: Context, config: Config): void {
     weavedThisTurn.set(agent, false)
     if (!config.autoIngest) return
     const session = agent.session
+    if (!memoryToolsAvailable(ctx)) {
+      // No tools to call — drop this turn's buffer instead of ingesting.
+      turnBuffers.delete(session)
+      return
+    }
     const buffer = turnBuffers.get(session) ?? []
     turnBuffers.delete(session)
     if (buffer.length === 0) return
