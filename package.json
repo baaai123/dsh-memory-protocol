@@ -14,8 +14,13 @@
   "files": [
     "lib/index.js",
     "lib/index.d.ts",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "scripts/bootstrap-memory.mjs"
   ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bootstrap": "node scripts/bootstrap-memory.mjs"
+  },
   "license": "MIT",
   "keywords": [
     "deepseek-harness",
