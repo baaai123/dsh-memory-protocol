@@ -45,6 +45,16 @@ function main() {
   log('bootstrap finished (fail-open: always exit 0)')
 }
 
+// pip 安装参数：venv 里 --user 被禁止（"User site-packages are not visible in
+// this virtualenv"），系统 python 里 --user 避免权限问题。按解释器类型决定。
+function pipInstallArgs() {
+  const probe = spawnSync(PY, ['-c', 'import sys; print(sys.prefix != sys.base_prefix)'], {
+    stdio: ['ignore', 'pipe', process.stderr],
+  })
+  const isVenv = probe.stdout && probe.stdout.toString().trim() === 'True'
+  return isVenv ? ['-m', 'pip', 'install'] : ['-m', 'pip', 'install', '--user']
+}
+
 function installMemorySkill() {
   const check = spawnSync(PY, ['-c', 'import memory_skill'], {
     stdio: ['ignore', process.stderr, process.stderr],
@@ -53,16 +63,17 @@ function installMemorySkill() {
     log('memory-skill already installed, skipping pip install')
     return
   }
-  log(`installing memory-skill via: ${PY} -m pip install --user ...`)
+  const args = pipInstallArgs()
+  log(`installing memory-skill via: ${PY} ${args.join(' ')} ...`)
   const result = spawnSync(
     PY,
-    ['-m', 'pip', 'install', '--user', 'memory-skill[onnx]', 'optimum[onnxruntime]', 'huggingface_hub'],
+    [...args, 'memory-skill[onnx]', 'optimum[onnxruntime]', 'huggingface_hub'],
     { stdio: ['ignore', process.stderr, process.stderr] },
   )
   if (result.status !== 0) {
     log('====================================================================')
     log('!! pip install FAILED. Manual fix:')
-    log(`   ${PY} -m pip install --user "memory-skill[onnx]" "optimum[onnxruntime]" huggingface_hub`)
+    log(`   ${PY} ${args.join(' ')} "memory-skill[onnx]" "optimum[onnxruntime]" huggingface_hub`)
     log('====================================================================')
     return
   }
