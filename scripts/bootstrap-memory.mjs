@@ -67,13 +67,13 @@ function installMemorySkill() {
   log(`installing memory-skill via: ${PY} ${args.join(' ')} ...`)
   const result = spawnSync(
     PY,
-    [...args, 'memory-skill[onnx]', 'optimum[onnxruntime]', 'huggingface_hub'],
+    [...args, 'memory-skill[onnx]', 'huggingface_hub'],
     { stdio: ['ignore', process.stderr, process.stderr] },
   )
   if (result.status !== 0) {
     log('====================================================================')
     log('!! pip install FAILED. Manual fix:')
-    log(`   ${PY} ${args.join(' ')} "memory-skill[onnx]" "optimum[onnxruntime]" huggingface_hub`)
+    log(`   ${PY} ${args.join(' ')} "memory-skill[onnx]" huggingface_hub`)
     log('====================================================================')
     return
   }
@@ -109,7 +109,6 @@ function ensureModel() {
       log('====================================================================')
       log('!! model download FAILED. Manual fix:')
       log(`   HF_ENDPOINT=https://hf-mirror.com ${PY} -c "from huggingface_hub import snapshot_download; snapshot_download('${MODEL_ID}', local_dir='${MODEL_DIR}')"`)
-      log(`   ${PY} -m optimum.onnxruntime --model ${MODEL_DIR} --task feature-extraction ${MODEL_DIR}`)
       log('====================================================================')
     }
   }
@@ -117,7 +116,7 @@ function ensureModel() {
 
 function modelSnippet() {
   const target = JSON.stringify(MODEL_DIR)
-  return `import os, subprocess, sys
+  return `import os, sys
 from pathlib import Path
 
 def log(msg):
@@ -128,21 +127,18 @@ log('HF endpoint: ' + os.environ.get('HF_ENDPOINT', 'https://huggingface.co'))
 try:
     from huggingface_hub import snapshot_download
 except ImportError:
-    log('huggingface_hub not installed; run: pip install "optimum[onnxruntime]" huggingface_hub')
+    log('huggingface_hub not installed; run: pip install huggingface_hub')
     sys.exit(2)
 
 target = ${target}
 Path(target).mkdir(parents=True, exist_ok=True)
 snapshot_download('${MODEL_ID}', local_dir=target)
 
+# BAAI/bge-large-en-v1.5 ships onnx/model.onnx in the repo, so snapshot
+# alone yields the ONNX model — no optimum conversion needed.
 if not (Path(target) / 'model.onnx').exists() and not (Path(target) / 'onnx' / 'model.onnx').exists():
-    log('converting to ONNX via optimum ...')
-    try:
-        import optimum  # noqa: F401
-    except ImportError:
-        log('optimum not installed; run: pip install "optimum[onnxruntime]" huggingface_hub')
-        sys.exit(2)
-    sys.exit(subprocess.run([sys.executable, '-m', 'optimum.onnxruntime', '--model', target, '--task', 'feature-extraction', target]).returncode)
+    log('ERROR: snapshot lacks model.onnx / onnx/model.onnx — embedding model cannot be loaded')
+    sys.exit(2)
 
 log('model ready at ' + target)
 `
