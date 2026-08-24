@@ -11,6 +11,20 @@
 #   MEMORY_SKILL_DIR      — 项目目录（默认 process.cwd()）
 #   MEMORY_SKILL_DB_PATH  — 记忆库路径（默认不设，server 用 memory.db）
 #   IMPORTANCE_API_KEY    — LLM 重要性评分 key（可选）
+#
+# ── Python 依赖与嵌入模型 ─────────────────────────────────────────────────────
+# (a) memory-mcp 需要 Python 侧依赖 + 模型才能注册工具：
+#     pip install "memory-skill[onnx]"   （提供 memory_skill.mcp_server）
+#     + 嵌入模型 BAAI/bge-large-en-v1.5（约 1.3GB，optimum 转 ONNX）
+# (b) scripts/bootstrap-memory.mjs 自动完成安装 + 下载：
+#     npm run bootstrap —— 或由 memory-protocol 插件在 memory 工具缺失时自动
+#     触发（autoBootstrap，默认开启；脚本 fail-open，永远 exit 0）
+# (c) 环境变量覆盖（详见 README「自动引导」）：
+#     MEMORY_SKILL_PYTHON   — 解释器（默认 python3）
+#     MEMORY_SKILL_DIR      — 模型基目录（默认 cwd）
+#     MEMORY_SKIP_BOOTSTRAP — =1 关闭自动引导
+#     MEMORY_SKIP_INSTALL   — =1 跳过 pip install
+#     MEMORY_SKIP_MODEL     — =1 跳过模型下载
 
 - insert:
     - id: memory-mcp

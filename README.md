@@ -22,11 +22,15 @@
 
 ## 安装
 
+**前置依赖：Python MCP server（memory-skill）+ 嵌入模型（bge-large-en-v1.5）**。插件启动时会自动引导安装（`npm run bootstrap` 或插件 autoBootstrap）；也可手动安装（下面的命令）。可用 `MEMORY_SKIP_BOOTSTRAP=1` 关闭自动引导。
+
 ```sh
 # 1. 先装 opencode-memory 的 Python server（提供 memory_skill.mcp_server）
-pip install memory-skill
+pip install "memory-skill[onnx]" optimum[onnxruntime] huggingface_hub
 
-# 2. 安装本插件
+# 2. 下载嵌入模型（约 1.3GB，自动转 ONNX；国内网络可加 HF_ENDPOINT=https://hf-mirror.com）
+
+# 3. 安装本插件
 dsh plugin --profile web add dsh-memory-protocol
 ```
 
@@ -38,6 +42,22 @@ dsh plugin --profile web add dsh-memory-protocol
 | `MEMORY_SKILL_DIR` | `process.cwd()` | memory-skill 项目目录 |
 | `MEMORY_SKILL_DB_PATH` | （未设） | 记忆库路径，server 默认 `memory.db` |
 | `IMPORTANCE_API_KEY` | （未设） | LLM 重要性评分 key（可选） |
+
+### 自动引导
+
+插件检测到 memory MCP 工具未注册时，会自动触发 `scripts/bootstrap-memory.mjs`（也可手动 `npm run bootstrap`）：
+
+1. `pip install --user "memory-skill[onnx]" optimum[onnxruntime] huggingface_hub`（已安装则跳过）
+2. 下载 `BAAI/bge-large-en-v1.5` 并转 ONNX（默认 `models/bge-large-en-v1.5/`；直连失败自动重试 `HF_ENDPOINT=https://hf-mirror.com`）
+
+| 环境变量 | 默认 | 说明 |
+|---|---|---|
+| `MEMORY_SKIP_BOOTSTRAP` | （未设） | `=1` 关闭自动引导 |
+| `MEMORY_SKIP_INSTALL` | （未设） | `=1` 跳过 pip install |
+| `MEMORY_SKIP_MODEL` | （未设） | `=1` 跳过模型下载 |
+| `MEMORY_MODEL_PATH` | `$MEMORY_SKILL_DIR/models/bge-large-en-v1.5` | 指定模型目录（已有 `model.onnx` 则跳过下载） |
+
+> **没有 Python 侧时，插件以 fail-open 模式运行（不强制执行协议、agent 不被阻塞），并显示一次性引导提示。** 引导完成并重启 dsh 后，memory 工具注册、严格协议自动恢复。
 
 ## 配置
 
