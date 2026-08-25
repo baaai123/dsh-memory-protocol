@@ -61,7 +61,27 @@ function main() {
   }
   if (process.env.MEMORY_SKIP_INSTALL !== '1') installMemorySkill()
   if (process.env.MEMORY_SKIP_MODEL !== '1') ensureModel()
+  checkApiKey()
   log('bootstrap finished (fail-open: always exit 0)')
+}
+
+// distill/主动学习需要 IMPORTANCE_API_KEY——缺失时明确提示（不阻断，记忆核心不受影响）
+function checkApiKey() {
+  const probe = spawnSync(
+    PY,
+    ['-c',
+      'import os; from pathlib import Path; from dotenv import load_dotenv; ' +
+      'load_dotenv(Path.home()/".config"/"memory-skill"/".env", override=False); ' +
+      'print(bool(os.environ.get("IMPORTANCE_API_KEY", "")))'],
+    { stdio: ['ignore', 'pipe', process.stderr] },
+  )
+  const ok = probe.stdout && probe.stdout.toString().trim() === 'True'
+  if (ok) {
+    log('IMPORTANCE_API_KEY configured — distill/主动学习可用')
+    return
+  }
+  log('IMPORTANCE_API_KEY NOT configured — distill/主动学习不可用（记忆核心不受影响）。')
+  log('配置: 把 IMPORTANCE_API_KEY=sk-... 写入 ~/.config/memory-skill/.env 后重启即可')
 }
 
 // pip 安装参数：venv 里 --user 被禁止（"User site-packages are not visible in
