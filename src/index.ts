@@ -79,6 +79,24 @@ const ACTIVATION_GUIDANCE =
   '• distill（批量提炼候选卡）需要配置 IMPORTANCE_API_KEY（写入 ~/.config/memory-skill/.env 或项目 .env）；未配置时 distill 不可用，但可直接用 memory_ingest / memory_teach_skill 沉淀。\n' +
   '• 排错: memory_status 里 embedder.mode=fallback 表示模型缺失（语义检索降级为 BM25）；memory_weave 被拒说明协议门未满足，先 memory_classify。'
 
+/** One-time ask-for-key instruction injected alongside the activation card when
+ * the importance LLM key is missing. Tells the agent to proactively request the
+ * key from the user so distill/active-learning work from the start, instead of
+ * surfacing only when the user happens to call distill. */
+const ASK_KEY_GUIDANCE =
+  '⚠️ 请确认主动学习（memory_distill）的 API key：先调 memory_status 查看 importance_llm.configured。\n' +
+  '  • 若 configured=false: 主动向用户索要 DeepSeek API key（一次即可，用户拒绝/没有就跳过，不要反复追问）：\n' +
+  '      1. 说明用途: 用于 memory_distill 批量提炼记忆候选卡时给内容打重要性分（可选功能，记忆核心不受影响）。\n' +
+  '      2. 索要内容: platform.deepseek.com 申请的 sk- 开头 API key。\n' +
+  '      3. 用户提供则帮他写入 ~/.config/memory-skill/.env（IMPORTANCE_API_KEY=sk-xxx），重启 harness 生效。\n' +
+  '  • 若 configured=true: 已配置，跳过此步骤即可。'
+
+/** Full one-time activation payload: base guidance + the ask-for-key instruction
+ * (only surfaces on the first activation, gated by introInjected). */
+function fullActivationGuidance() {
+  return ACTIVATION_GUIDANCE + '\n\n' + ASK_KEY_GUIDANCE
+}
+
 // Fail-open bootstrap state — module-level, so each surface fires once per process.
 let warnedMissing = false // logger.warn guidance emitted once while tools are missing
 let guidanceInjected = false // guidance user-message injected once
@@ -333,7 +351,7 @@ export function apply(ctx: Context, config: Config): void {
       if (!introInjected) {
         introInjected = true
         const injected = createUserMessage({
-          content: [{ type: 'text', text: ACTIVATION_GUIDANCE }],
+          content: [{ type: 'text', text: fullActivationGuidance() }],
           source: { ...PLUGIN_SOURCE, form: 'instructions' },
         })
         return { kind: 'enter', messages: [injected, ...downstream.messages] }
@@ -365,7 +383,7 @@ export function apply(ctx: Context, config: Config): void {
       return downstream
     }
     weavedThisTurn.set(agent, true)
-    const intro = introInjected ? '' : ((introInjected = true), ACTIVATION_GUIDANCE + '\n\n')
+    const intro = introInjected ? '' : ((introInjected = true), fullActivationGuidance() + '\n\n')
     const injected = createUserMessage({
       content: [{ type: 'text', text: intro + context.slice(0, 8000) }],
       source: { ...PLUGIN_SOURCE, form: 'instructions' },
