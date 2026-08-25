@@ -24,9 +24,23 @@ const log = (...args) => console.error('[memory-bootstrap]', ...args)
 
 const PY = process.env.MEMORY_SKILL_PYTHON ?? 'python3'
 const MODEL_ID = 'BAAI/bge-large-en-v1.5'
-const MODEL_DIR =
-  process.env.MEMORY_MODEL_PATH ??
-  path.join(process.env.MEMORY_SKILL_DIR ?? process.cwd(), 'models', 'bge-large-en-v1.5')
+
+// 模型目录解析优先级：
+//   1. MEMORY_MODEL_PATH 显式指定
+//   2. 已安装 memory_skill 的默认查找路径（pip 场景 = site-packages/models/...，
+//      contracts.py 的 model_path 默认值基于 __file__）→ MCP server 无需配置即可命中
+//   3. (MEMORY_SKILL_DIR ?? cwd)/models/bge-large-en-v1.5（仓库 checkout 场景）
+function resolveModelDir() {
+  if (process.env.MEMORY_MODEL_PATH) return process.env.MEMORY_MODEL_PATH
+  const probe = spawnSync(
+    PY,
+    ['-c', 'import memory_skill.contracts as c; print(c.MemorySkillConfig().model_path)'],
+    { stdio: ['ignore', 'pipe', process.stderr] },
+  )
+  const resolved = probe.stdout && probe.stdout.toString().trim()
+  if (probe.status === 0 && resolved) return resolved
+  return path.join(process.env.MEMORY_SKILL_DIR ?? process.cwd(), 'models', 'bge-large-en-v1.5')
+}
 
 try {
   main()
@@ -80,21 +94,22 @@ function installMemorySkill() {
   log('pip install complete')
 }
 
-function hasModel() {
+function hasModel(modelDir) {
   return (
-    existsSync(path.join(MODEL_DIR, 'model.onnx')) ||
-    existsSync(path.join(MODEL_DIR, 'onnx', 'model.onnx'))
+    existsSync(path.join(modelDir, 'model.onnx')) ||
+    existsSync(path.join(modelDir, 'onnx', 'model.onnx'))
   )
 }
 
 function ensureModel() {
-  if (hasModel()) {
-    log(`model already present (${MODEL_DIR})`)
+  const modelDir = resolveModelDir()
+  if (hasModel(modelDir)) {
+    log(`model already present (${modelDir})`)
     return
   }
-  mkdirSync(MODEL_DIR, { recursive: true })
-  log(`downloading ${MODEL_ID} -> ${MODEL_DIR} ...`)
-  const snippet = modelSnippet()
+  mkdirSync(modelDir, { recursive: true })
+  log(`downloading ${MODEL_ID} -> ${modelDir} ...`)
+  const snippet = modelSnippet(modelDir)
   const attempt = (extraEnv) =>
     spawnSync(PY, ['-'], {
       input: snippet,
@@ -103,19 +118,19 @@ function ensureModel() {
     })
   let result = attempt({})
   if (result.status !== 0) {
-    log(`download/convert failed (exit ${result.status}); retrying with HF_ENDPOINT=https://hf-mirror.com ...`)
+    log(`download failed (exit ${result.status}); retrying with HF_ENDPOINT=https://hf-mirror.com ...`)
     result = attempt({ HF_ENDPOINT: 'https://hf-mirror.com' })
     if (result.status !== 0) {
       log('====================================================================')
       log('!! model download FAILED. Manual fix:')
-      log(`   HF_ENDPOINT=https://hf-mirror.com ${PY} -c "from huggingface_hub import snapshot_download; snapshot_download('${MODEL_ID}', local_dir='${MODEL_DIR}')"`)
+      log(`   HF_ENDPOINT=https://hf-mirror.com ${PY} -c "from huggingface_hub import snapshot_download; snapshot_download('${MODEL_ID}', local_dir='${modelDir}')"`)
       log('====================================================================')
     }
   }
 }
 
-function modelSnippet() {
-  const target = JSON.stringify(MODEL_DIR)
+function modelSnippet(modelDir) {
+  const target = JSON.stringify(modelDir)
   return `import os, sys
 from pathlib import Path
 
