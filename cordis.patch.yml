@@ -34,10 +34,13 @@
         transport: stdio
         # 不再裸 python3（会被 PATH 劫持到 conda/venv/WindowsApps stub）——
         # 走 node 包装脚本：python-resolve.cjs 解析真实解释器 + 透传 stdio。
-        # baseUrl = profile 目录（loader ctx 注入），不能依赖 process.cwd()（启动目录）
+        # baseUrl = profile 目录（loader ctx 注入，file:// URL 形式），不能依赖 process.cwd()（启动目录）。
+        # 注意：中文 Windows 用户名（如 C:\Users\张三\）会被 pathToFileURL URL 编码
+        # （file:///C:/Users/%E5%BC%A0%E4%B8%89/），必须 decodeURIComponent 还原，
+        # 否则 Node require/spawn 会因编码路径 MODULE_NOT_FOUND / EPERM。
         command: !!js process.execPath
         args:
-          - !!js baseUrl.slice(7) + 'node_modules/dsh-memory-protocol/scripts/run-mcp.cjs'
+          - !!js decodeURIComponent(baseUrl).slice(7) + 'node_modules/dsh-memory-protocol/scripts/run-mcp.cjs'
         cwd: !!js process.env.MEMORY_SKILL_DIR ?? process.cwd()
         toolCallTimeoutMs: 60000
         failOnStartupError: false
