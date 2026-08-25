@@ -35,12 +35,15 @@
         # 不再裸 python3（会被 PATH 劫持到 conda/venv/WindowsApps stub）——
         # 走 node 包装脚本：python-resolve.cjs 解析真实解释器 + 透传 stdio。
         # baseUrl = profile 目录（loader ctx 注入，file:// URL 形式），不能依赖 process.cwd()（启动目录）。
-        # 注意：中文 Windows 用户名（如 C:\Users\张三\）会被 pathToFileURL URL 编码
-        # （file:///C:/Users/%E5%BC%A0%E4%B8%89/），必须 decodeURIComponent 还原，
-        # 否则 Node require/spawn 会因编码路径 MODULE_NOT_FOUND / EPERM。
+        # 修复要点（Windows）：
+        #   1. 中文用户名会被 pathToFileURL URL 编码（file:///C:/Users/%E5%BC%A0%E4%B8%89/），
+        #      必须 decodeURIComponent 还原，否则 Node require/spawn 报 MODULE_NOT_FOUND / EPERM。
+        #   2. slice(7) 后是 /C:/Users/...（前导斜杠 + 盘符），Windows 上 /C:/ 会被解析成
+        #      当前盘根下的 C: 目录（C:\C:\Users\... 双盘符）——必须剥掉盘符前的前导斜杠。
+        #      Linux 的 /home/... 是绝对路径，保持原样。
         command: !!js process.execPath
         args:
-          - !!js decodeURIComponent(baseUrl).slice(7) + 'node_modules/dsh-memory-protocol/scripts/run-mcp.cjs'
+          - !!js (() => { let p = decodeURIComponent(baseUrl).slice(7); if (process.platform === 'win32' && /^\/[A-Za-z]:/.test(p)) p = p.slice(1); return p + 'node_modules/dsh-memory-protocol/scripts/run-mcp.cjs'; })()
         cwd: !!js process.env.MEMORY_SKILL_DIR ?? process.cwd()
         toolCallTimeoutMs: 60000
         failOnStartupError: false
