@@ -65,14 +65,25 @@ const PLUGIN_SOURCE: MessageSource = { kind: 'plugin', plugin: 'memory-protocol'
 const MISSING_TOOLS_GUIDANCE =
   'memory-protocol: memory MCP tools NOT registered (python3 -m memory_skill.mcp_server unavailable). ' +
   'Fix: pip install "memory-skill[onnx]" + download bge-large-en-v1.5 (auto-bootstrap does this; ' +
-  'set MEMORY_SKIP_BOOTSTRAP=1 to disable), or set MEMORY_SKILL_PYTHON to the right interpreter. ' +
+  'set MEMORY_SKIP_BOOTSTRAP=1 to disable), or set MEMORY_SKILL_PYTHON to the right interpreter ' +
+  '(Windows: point it at the real python.exe, e.g. D:\\Python\\Python313\\python.exe). ' +
   'Agent is running WITHOUT memory until the tools appear.'
+
+/** One-time activation card injected once the memory tools ARE registered. */
+const ACTIVATION_GUIDANCE =
+  '[memory-protocol] 记忆系统已激活（memory_weave 等 15 个工具可用）。\n' +
+  '• 状态/详情: 调 memory_status 查看（embedder 模式、库位置、记忆条目数）。\n' +
+  '• 每轮协议: 回复前调 memory_weave(user_message=<当前用户消息>, assistant_content=<你上一轮回复原文>)，返回 8 块上下文（偏好/任务/技能/检索记忆/指令区）。\n' +
+  '• 主动检索: 信息缺口时 memory_search(query)；关键决策/学到的新技能用 memory_ingest 或 memory_teach_skill 沉淀。\n' +
+  '• 主动学习: memory_classify → learning_queue → check_skill → websearch → teach 是记忆系统的主动学习闭环。\n' +
+  '• 排错: memory_status 里 embedder.mode=fallback 表示模型缺失（语义检索降级为 BM25）；memory_weave 被拒说明协议门未满足，先 memory_classify。'
 
 // Fail-open bootstrap state — module-level, so each surface fires once per process.
 let warnedMissing = false // logger.warn guidance emitted once while tools are missing
 let guidanceInjected = false // guidance user-message injected once
 let bootstrapSpawned = false // bootstrap script spawned at most once
 let resumedLogged = false // transition log once when tools come back
+let introInjected = false // activation card injected once when tools are available
 
 /**
  * Per-agent protocol state: whether the CURRENT turn has already run its weave.
@@ -318,6 +329,14 @@ export function apply(ctx: Context, config: Config): void {
 
     if (!config.injectWeave) {
       // Without auto-weave the gate stays closed until the model weaves on its own.
+      if (!introInjected) {
+        introInjected = true
+        const injected = createUserMessage({
+          content: [{ type: 'text', text: ACTIVATION_GUIDANCE }],
+          source: { ...PLUGIN_SOURCE, form: 'instructions' },
+        })
+        return { kind: 'enter', messages: [injected, ...downstream.messages] }
+      }
       return downstream
     }
 
@@ -345,8 +364,9 @@ export function apply(ctx: Context, config: Config): void {
       return downstream
     }
     weavedThisTurn.set(agent, true)
+    const intro = introInjected ? '' : ((introInjected = true), ACTIVATION_GUIDANCE + '\n\n')
     const injected = createUserMessage({
-      content: [{ type: 'text', text: context.slice(0, 8000) }],
+      content: [{ type: 'text', text: intro + context.slice(0, 8000) }],
       source: { ...PLUGIN_SOURCE, form: 'instructions' },
     })
     return { kind: 'enter', messages: [injected, ...downstream.messages] }
