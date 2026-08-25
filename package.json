@@ -15,7 +15,9 @@
     "lib/index.js",
     "lib/index.d.ts",
     "cordis.patch.yml",
-    "scripts/bootstrap-memory.mjs"
+    "scripts/bootstrap-memory.mjs",
+    "scripts/python-resolve.cjs",
+    "scripts/run-mcp.cjs"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

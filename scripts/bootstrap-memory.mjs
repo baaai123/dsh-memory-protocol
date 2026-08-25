@@ -20,29 +20,11 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { resolvePython } from './python-resolve.cjs'
 
 const log = (...args) => console.error('[memory-bootstrap]', ...args)
 
 const MODEL_ID = 'BAAI/bge-large-en-v1.5'
-
-// Python 解释器解析：
-//   1. MEMORY_SKILL_PYTHON 显式指定（Windows 用户可指向 D:\Python\Python3xx\python.exe）
-//   2. 平台候选顺序：Windows 的 `python3` 经常是 Microsoft Store stub（无效），
-//      依次探测 python3 → python → py（Windows launcher），取第一个 `--version` 成功的
-function resolvePython() {
-  if (process.env.MEMORY_SKILL_PYTHON) return process.env.MEMORY_SKILL_PYTHON
-  const candidates = process.platform === 'win32' ? ['python3', 'python', 'py'] : ['python3', 'python']
-  for (const c of candidates) {
-    const r = spawnSync(c, ['--version'], { stdio: ['ignore', 'ignore', 'ignore'] })
-    if (r.status === 0) {
-      if (c !== 'python3') log(`python3 unavailable, using '${c}'`)
-      return c
-    }
-  }
-  log('no working python found (tried python3/python/py) — set MEMORY_SKILL_PYTHON')
-  return 'python3' // 全部失败兜底，让后续错误提示自然暴露
-}
-
 const PY = resolvePython()
 
 // 模型目录解析优先级：
