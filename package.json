@@ -1,7 +1,7 @@
 {
   "name": "dsh-memory-protocol",
   "description": "Memory protocol enforcement plugin for DeepSeek Harness — forces memory_weave before tool calls, auto-ingests session turns, injects memory context into agent steps. Bridges the opencode-memory MCP server with a hard protocol gate.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
