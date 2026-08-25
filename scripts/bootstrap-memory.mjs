@@ -18,6 +18,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 const log = (...args) => console.error('[memory-bootstrap]', ...args)
@@ -48,7 +49,9 @@ const PY = resolvePython()
 //   1. MEMORY_MODEL_PATH 显式指定
 //   2. 已安装 memory_skill 的默认查找路径（pip 场景 = site-packages/models/...，
 //      contracts.py 的 model_path 默认值基于 __file__）→ MCP server 无需配置即可命中
-//   3. (MEMORY_SKILL_DIR ?? cwd)/models/bge-large-en-v1.5（仓库 checkout 场景）
+//   3. MEMORY_SKILL_DIR/models（仓库 checkout 场景）
+//   4. ~/.dsh-memory/models 兜底——用用户级目录而非 cwd，避免 Windows 上
+//      cwd 是 OneDrive/桌面（模型被云同步、文件锁、磁盘爆满）
 function resolveModelDir() {
   if (process.env.MEMORY_MODEL_PATH) return process.env.MEMORY_MODEL_PATH
   const probe = spawnSync(
@@ -58,7 +61,8 @@ function resolveModelDir() {
   )
   const resolved = probe.stdout && probe.stdout.toString().trim()
   if (probe.status === 0 && resolved) return resolved
-  return path.join(process.env.MEMORY_SKILL_DIR ?? process.cwd(), 'models', 'bge-large-en-v1.5')
+  const base = process.env.MEMORY_SKILL_DIR ?? path.join(os.homedir(), '.dsh-memory')
+  return path.join(base, 'models', 'bge-large-en-v1.5')
 }
 
 try {
@@ -107,6 +111,9 @@ function installMemorySkill() {
     log('====================================================================')
     log('!! pip install FAILED. Manual fix:')
     log(`   ${PY} ${args.join(' ')} "memory-skill[onnx]" huggingface_hub`)
+    if (process.platform === 'win32') {
+      log(`   （Windows: 若 ${PY} 无效，用 set MEMORY_SKILL_PYTHON=D:\\Python\\Python3xx\\python.exe 指向真 Python 后重试）`)
+    }
     log('====================================================================')
     return
   }
@@ -143,6 +150,9 @@ function ensureModel() {
       log('====================================================================')
       log('!! model download FAILED. Manual fix:')
       log(`   HF_ENDPOINT=https://hf-mirror.com ${PY} -c "from huggingface_hub import snapshot_download; snapshot_download('${MODEL_ID}', local_dir='${modelDir}')"`)
+      if (process.platform === 'win32') {
+        log('   （Windows: 用 set HF_ENDPOINT=https://hf-mirror.com 再执行上述命令）')
+      }
       log('====================================================================')
     }
   }
