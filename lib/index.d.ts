@@ -47,6 +47,8 @@ export interface Config {
     bootFailOpen: boolean;
     /** Auto-run scripts/bootstrap-memory.mjs (once per process) when the tools are missing. Default true. */
     autoBootstrap: boolean;
+    /** Append a backup signal to the ccmp-backup signal file after each finished turn. Default false. */
+    autoBackup: boolean;
 }
 export declare const Config: Schema<Config>;
 export declare function apply(ctx: Context, config: Config): void;

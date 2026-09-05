@@ -34,6 +34,9 @@ import { CallId, createUserMessage, type MessageSource } from '@deepseek-ai/dsh-
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { PreToolDecision, ToolExecution, ToolExecutionInput } from '@deepseek-ai/dsh-tools'
 import { spawn } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** MCP-bridged tool name prefix for the opencode memory server. */
@@ -243,6 +246,8 @@ export interface Config {
   bootFailOpen: boolean
   /** Auto-run scripts/bootstrap-memory.mjs (once per process) when the tools are missing. Default true. */
   autoBootstrap: boolean
+  /** Append a backup signal to the ccmp-backup signal file after each finished turn. Default false. */
+  autoBackup: boolean
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -252,6 +257,7 @@ export const Config: Schema<Config> = Schema.object({
   allowlist: Schema.array(Schema.string()).default([]),
   bootFailOpen: Schema.boolean().default(true),
   autoBootstrap: Schema.boolean().default(true),
+  autoBackup: Schema.boolean().default(false),
 })
 
 export function apply(ctx: Context, config: Config): void {
@@ -394,6 +400,7 @@ export function apply(ctx: Context, config: Config): void {
   // agent/turn-stopping: ingest the finished turn and reset the weave gate.
   ctx.on('agent/turn-stopping', async ({ agent }): Promise<void> => {
     weavedThisTurn.set(agent, false)
+    if (config.autoBackup) signalBackup()
     if (!config.autoIngest) return
     const session = agent.session
     if (!memoryToolsAvailable(ctx)) {
@@ -411,4 +418,18 @@ export function apply(ctx: Context, config: Config): void {
       // A failed ingest must not block the turn from closing.
     }
   })
+}
+
+// Cloud backup signal (ccmp-backup daemon, debounced): best-effort append after
+// a finished turn; the daemon debounces so a backup fires only when the user
+// goes idle. Fail-open: never throw.
+function signalBackup(): void {
+  try {
+    const envVal = process.env.SOLO_MEMORY_BACKUP_SIGNAL
+    if (envVal === '0') return
+    const signalPath = envVal || path.join(os.homedir(), '.ccmp-backup', 'signal')
+    fs.appendFileSync(signalPath, `${new Date().toISOString()}\n`)
+  } catch {
+    // fail-open: backup signal is best-effort
+  }
 }
