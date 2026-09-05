@@ -40,7 +40,7 @@ dsh plugin --profile web add dsh-memory-protocol
 |---|---|---|
 | `MEMORY_SKILL_PYTHON` | `python3` | 解释器路径 |
 | `MEMORY_SKILL_DIR` | `process.cwd()` | memory-skill 项目目录 |
-| `MEMORY_SKILL_DB_PATH` | （未设） | 记忆库路径，server 默认 `memory.db` |
+| `MEMORY_SKILL_DB_PATH` | `~/.memory-skill/memory.db` | 记忆库路径（server 已内置此绝对默认值；如需共享 opencode 的库，显式指向该库文件） |
 | `IMPORTANCE_API_KEY` | （未设） | LLM 重要性评分 key（可选） |
 
 ### 自动引导
